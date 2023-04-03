@@ -1,8 +1,6 @@
 import util.Utility;
 
-import javax.xml.crypto.Data;
 import java.io.IOException;
-import java.lang.reflect.Array;
 import java.net.*;
 import java.util.*;
 
@@ -10,8 +8,9 @@ import static util.Utility.*;
 
 public class RDTSocket {
 
-    private static final int TIME_OUT = 500;
-    // common attributes
+    private static final int TIME_OUT = 500; // Time out period
+
+    // common attributes - for both role as a receiver or sender
     private final UnreliableSocket unreliableSocket;
 
     private final int windowSize;
@@ -19,13 +18,11 @@ public class RDTSocket {
     // SENDER related - this is SENDER
     private InetSocketAddress receiverAddr;
 
-    private int ISN;
+    private int ISN; // initial sequence number
 
     private int expectedACK;
-    // RECEIVER related
+    // RECEIVER related - this is RECEIVER
     private InetSocketAddress senderAddr;
-
-    private int receiverBase;
 
     private int expectedSeqNum;
 
@@ -68,11 +65,12 @@ public class RDTSocket {
             unreliableSocket.recvfrom(recvSTART);
             PacketHeader headerSTART = Utility.extractHeader(recvSTART);
 
-            int type = headerSTART.getType();
+            int type = headerSTART.type();
 
             // checks if not START or END
             if (type != 0 && type != 1) continue;
 
+            // if END -> resend the END request
             if (type == 1) {
                 InetSocketAddress endAddr = new InetSocketAddress(recvSTART.getAddress(), recvSTART.getPort());
                 PacketHeader headerEND = new PacketHeader(1, 0, 0, 0);
@@ -86,10 +84,10 @@ public class RDTSocket {
             // register sender
             senderAddr = new InetSocketAddress(recvSTART.getAddress(), recvSTART.getPort());
             // expectedSeqNum = ISN + 1
-            expectedSeqNum = headerSTART.getSeq_num() + 1;
+            expectedSeqNum = headerSTART.seq_num() + 1;
 
             // sends ACK to the sender
-            PacketHeader headerACK = new PacketHeader(3, headerSTART.getSeq_num(), 0, 0);
+            PacketHeader headerACK = new PacketHeader(3, headerSTART.seq_num(), 0, 0);
             byte[] segmentACK = Utility.encodeHeader(headerACK);
             DatagramPacket sendACK = new DatagramPacket(segmentACK, segmentACK.length, senderAddr);
 
@@ -111,6 +109,7 @@ public class RDTSocket {
         - END: handle logic and end the loop
         - DATA: handle using rdt logic
          */
+
         // maps seqNum to its payload for reordering
         HashMap<Integer, byte[]> receivedPackets = new HashMap<>();
 
@@ -122,14 +121,14 @@ public class RDTSocket {
             // check correct sender and corruption
             if (!(isRegisteredSender(recvPacket) && verify_packet(recvPacket))) continue;
 
-            int recvType = recvHeader.getType();
+            int recvType = recvHeader.type();
 
             // handle ACK or unknown type -> discard
             if (recvType > 2 || recvType < 0) continue;
 
             // handle START
             if (recvType == 0) {
-                PacketHeader headerAckStart = new PacketHeader(3, receiverBase, 0, 0);
+                PacketHeader headerAckStart = new PacketHeader(3, 0, 0, 0);
                 byte[] segmentAckStart = encodeHeader(headerAckStart);
                 DatagramPacket sendAckStart = new DatagramPacket(segmentAckStart, segmentAckStart.length, senderAddr);
                 unreliableSocket.sendto(sendAckStart);
@@ -148,7 +147,7 @@ public class RDTSocket {
 
             // check corruption
             if (!verify_packet(recvPacket)) continue;
-            int recvSeqNum = recvHeader.getSeq_num();
+            int recvSeqNum = recvHeader.seq_num();
 
             // store the packet if it is new and in the window range
             boolean isNewPacket = !receivedPackets.containsKey(recvSeqNum);
@@ -232,7 +231,7 @@ public class RDTSocket {
 
             PacketHeader header = extractHeader(recvSTART);
             // check correct receiver, type ACK, and correct ACK seqnum
-            if (header.getType() == 3 && isRegisteredReceiver(recvSTART) && header.getSeq_num() == ISN) {
+            if (header.type() == 3 && isRegisteredReceiver(recvSTART) && header.seq_num() == ISN) {
                 expectedACK = ISN + 2;
                 break;
             }
@@ -283,10 +282,10 @@ public class RDTSocket {
             PacketHeader recvHeader = extractHeader(recvPacket);
 
             // check correct receiver, not corrupted, and is ACK
-            if (!(isRegisteredReceiver(recvPacket) && verify_packet(recvPacket) && recvHeader.getType() == 3)) continue;
+            if (!(isRegisteredReceiver(recvPacket) && verify_packet(recvPacket) && recvHeader.type() == 3)) continue;
 
             // execute the RDT logic
-            int recvACK = recvHeader.getSeq_num();
+            int recvACK = recvHeader.seq_num();
             // if received ACK smaller than the expected ACK -> drop this packet
             if (recvACK < expectedACK) continue;
 
@@ -313,7 +312,7 @@ public class RDTSocket {
     }
 
     private TimerTask createSendWindowTask(List<DatagramPacket> window) {
-        TimerTask task = new TimerTask() {
+        return new TimerTask() {
             @Override
             public void run() {
                 try {
@@ -328,7 +327,6 @@ public class RDTSocket {
                 }
             }
         };
-        return task;
     }
 
     private LinkedList<DatagramPacket> splitData(byte[] data) {
@@ -356,12 +354,7 @@ public class RDTSocket {
             packets[i] = new DatagramPacket(segment, segment.length, receiverAddr);
         }
 
-        LinkedList<DatagramPacket> list = new LinkedList<>();
-        for (DatagramPacket p : packets) {
-            list.add(p);
-        }
-
-        return list;
+        return new LinkedList<>(Arrays.asList(packets));
     }
 
     // close connection
@@ -400,7 +393,7 @@ public class RDTSocket {
 
             PacketHeader recvHeader = extractHeader(recvPacket);
 
-            if (recvHeader.getType() == 3 && recvHeader.getSeq_num() == 0) break;
+            if (recvHeader.type() == 3 && recvHeader.seq_num() == 0) break;
         }
         timer.cancel();
         Thread.sleep(TIME_OUT);

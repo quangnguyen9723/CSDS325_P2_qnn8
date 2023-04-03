@@ -1,6 +1,4 @@
 import java.io.*;
-import java.net.*;
-import java.util.Arrays;
 
 public class Receiver {
     public static final String fileWrite = "download.txt";

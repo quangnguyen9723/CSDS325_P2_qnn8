@@ -44,7 +44,7 @@ public class Utility {
             }
             if (r.nextDouble() <= 0.5) { // corrupted packet -> change bytes
                 PacketHeader header = extractHeader(p);
-                if (header.getLength() == 0) return;
+                if (header.length() == 0) return;
 
                 int index = r.nextInt(HEADER_LENGTH, p.getData().length);
                 p.getData()[index] = (byte) (r.nextInt(128)); // some random index is randomized
@@ -63,41 +63,19 @@ public class Utility {
 
     //______________________________________________________Packet Header_____________________________________________________________________
 
-    public static class PacketHeader {
-        private final int type; // 0: START; 1: END; 2: DATA; 3: ACK -> 4 bytes
-        private final int seq_num; // Described below -> 4 bytes TODO: remember to implement wraparounds in byte
-        private final int length; // Length of data; 0 for ACK, START and END packets
-        private final int checksum; // 32-bit CRC -> 4 bytes
-
-
-        public PacketHeader(int type, int seq_num, int length, int checksum) {
-            this.type = type;
-            this.seq_num = seq_num;
-            this.length = length;
-            this.checksum = checksum;
-        }
-
-        public int getType() {
-            return type;
-        }
-
-        public int getSeq_num() {
-            return seq_num;
-        }
-
-        public int getLength() {
-            return length;
-        }
-
-        public int getChecksum() {
-            return checksum;
-        }
+    /**
+     * @param type     0: START; 1: END; 2: DATA; 3: ACK -> 4 bytes
+     * @param seq_num  Described below -> 4 bytes TODO: remember to implement wraparounds in byte
+     * @param length   Length of data; 0 for ACK, START and END packets
+     * @param checksum 32-bit CRC -> 4 bytes
+     */
+    public record PacketHeader(int type, int seq_num, int length, int checksum) {
 
         @Override
-        public String toString() {
-            return "type:" + getType() + " seq_num:" + getSeq_num() + " length:" + getLength() + " checksum:" + getChecksum();
+            public String toString() {
+                return "type:" + type() + " seq_num:" + seq_num() + " length:" + length() + " checksum:" + checksum();
+            }
         }
-    }
 
     //______________________________________________________Utility Function_____________________________________________________________________
 
@@ -135,7 +113,7 @@ public class Utility {
 
     public static byte[] extractPayload(DatagramPacket p) {
         PacketHeader header = extractHeader(p);
-        return Arrays.copyOfRange(p.getData(), HEADER_LENGTH, HEADER_LENGTH + header.getLength());
+        return Arrays.copyOfRange(p.getData(), HEADER_LENGTH, HEADER_LENGTH + header.length());
     }
 
     // checksum only calculates the body of segment
@@ -156,10 +134,10 @@ public class Utility {
 
     public static boolean verify_packet(DatagramPacket p) {
         PacketHeader header = extractHeader(p);
-        if (header.getLength() == 0) return true;
+        if (header.length() == 0) return true;
 
         byte[] payload = extractPayload(p);
-        return header.getChecksum() == compute_checksum(payload);
+        return header.checksum() == compute_checksum(payload);
     }
 
     public static byte[] insertHeader(byte[] header, byte[] payload) {
